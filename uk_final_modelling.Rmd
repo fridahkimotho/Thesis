@@ -1,0 +1,521 @@
+---
+title: "UK_final-model"
+output: html_document
+---
+
+In this document, we will explore different models to predict accident severity using the 2014 to 2017 UK road accident data.We will use tree based models :random forest, gradient boosting . xgboost and Naive Bayers. 
+
+Due to memory restrictions in R, the following models - Multinomial regression, SVM, KNN given the size of our data set. 
+
+#################################-----start: preprossesing of the previously cleaned data. 
+
+Load the libraries
+```{r}
+library(randomForest)
+library(xgboost)
+library(Matrix)
+library(nnet)
+library(data.table)
+library(caret)
+library(corrplot)
+library(foreach)
+library(doSNOW)
+library(dplyr)
+```
+
+load the data 
+```{r}
+model.data <- read.csv("C://Users/s137r4//Desktop//Analysisfile//Accident14_17.csv")
+```
+
+structure and mising data: since most of the values with missing data are location columns that do not need for modelling, due to their uniqueness to a single case, we can elimante them 
+```{r}
+#missing values 
+p<- function(x){sum(is.na(x))/length(x)*100}
+apply(mydata, 2, p)
+model.data<-mydata[, -c(1,3,4,5,6)]
+
+```
+
+#Correlation plot :-
+
+ALL the factors need to be integers 
+
+```{r}
+model.data$Accident_Index<-as.integer(model.data$Accident_Index)
+model.data$Date<-as.integer(model.data$Date)
+model.data$Time<-as.integer(model.data$Time)
+model.data$Local_Authority_.Highway.<-as.integer(model.data$Local_Authority_.Highway.)
+model.data$LSOA_of_Accident_Location<-as.integer(model.data$LSOA_of_Accident_Location)
+```
+
+plot
+```{r}
+cm<- cor(model.data, method="pearson", use="everything")
+corrplot(cm,tl.pos = "td", tl.cex = 0.5,type = "upper",diag = FALSE, order = "FPC")
+```
+
+
+
+Correlation matrix for the most corellated  variables 
+
+
+```{r}
+
+corrdata<- model.data[c(3:5, 43:49,51:55)]
+
+```
+
+plot 2 
+
+```{r}
+cm<- cor(corrdata, method="pearson", use="everything")
+corrplot(cm,tl.pos = "td", method = "number",tl.cex = 0.9,type = "upper",diag = FALSE, order = "FPC")
+
+
+```
+
+
+
+
+
+Strong correlation in related variables, that either mean the same thing ro are derived from each other
+
+the following vairables are redundant :
+ 1.age of the driver- age band of the driver
+ 2. age of casualty - casualty age band 
+ 3. casualty home area type - driver-home area type
+ 4. local district authority _ police force 
+ 
+ while accdent severity and casualty severity are the same as (defination from ukgov)
+ 
+ 5. accident severity - casualty severity 
+```{r}
+
+```
+ 
+ 
+ 
+most models work with factors, we can get rid of continous varaibles from the first bunch of data that is not needed ( data, time,LSOA_of_Accident_Location" )
+and correlated variables such as (age_band of driver&casualty, casualty severity, local authorit district /highway, casualty home area type )
+```{r}
+model.data<-model.data[, -c(5:6,8:10,44,55:5,50,28:29,63)]
+```
+
+transform categorical variables into factors 
+
+```{r}
+colz <- c(3,5:6,8:12,14:36,38:51)
+model.data[, colz]<-lapply(model.data[,colz], factor)
+
+model.data$Age_of_Casualty <- as.numeric(as.character(model.data$Age_of_Casualty))
+model.data$Age_of_Driver<- as.numeric(as.character(model.data$Age_of_Driver))
+
+```
+
+```{r}
+write.csv(model.data, "C://Users//s137r4//Desktop//Analysisfile//model_data_uk.csv", sep = "," )
+```
+
+
+# ####----------------------split training and testing data-----------------------####
+```{r}
+set.seed(1234)
+ind<- sample(2, nrow(model.data), replace =T, prob =c(0.8,0.2))
+
+train <- model.data[ind==1, ]
+test <- model.data[ind==2, ]
+```
+```{r}
+p1 <- train %>%
+
+  ggplot(aes(Accident_Severity, fill = Casualty_Severity)) +
+
+  geom_bar(position = "fill")
+
+p1
+
+# from the chart below, there is a strong correlation btn accident_severity and casualty-severity.slight severity 
+
+```
+```{r}
+p2 <- train %>%
+
+  ggplot(aes(Accident_Severity, fill=Number_of_Casualties)) +
+
+  geom_bar(position = "fill")
+
+p2
+```
+
+
+
+
+ ##########################################################################
+ #
+ #                         XGBOOST 
+ #
+ #
+ ###############################################################################
+ 
+# ##################----- First model: XGBOOST------------
+delete the index, since xgboost one hot coding will would have to convert each id value to binary form and hence require alot of memory 
+ 
+```{r}
+trainxgb<-train[, -c(1)]
+testxgb<- test[, -c(1)]
+
+```
+ 
+Set parameters for the model, since our response variable is multilclass, we will us   e multisoft as the objective and the number os classes are 3
+
+```{r}
+param       = list("objective" = "multi:softmax", # multi class classification
+                   "num_class"= 3 ,  		# Number of classes in the dependent variable.
+                   "eval_metric" = "mlogloss",  	 # evaluation metric 
+                   "nthread" = 4,   			 # number of threads to be used 
+                   "max_depth" = 6,    		 # maximum depth of tree 
+                   "eta" = 0.3,    			 # step size shrinkage #default0.3
+                   "gamma" = 0,    			 # minimum loss reduction #default
+                   "subsample" = 0.7,    		 # part of data instances to grow tree. default 1 
+                   "colsample_bytree" = 1, 		 # subsample ratio of columns when constructing each tree default -1
+                   "min_child_weight" = 2 		 # minimum sum of instance weight needed in a child 
+)
+
+```
+
+
+
+
+Xgboost requires that: response variable should be numeric and  the levels should start from zero 
+                       predictors should be a matrix, 
+```{r}
+predictors<-trainxgb[, -c(2)] #all predictors excluding accident severity
+label = as.numeric(trainxgb$Accident_Severity)-1
+dataxgb<- as.matrix(predictors)
+mode(dataxgb) <- 'double' # to numeric i.e double precision 
+
+```
+                       
+same for test data 
+
+```{r}
+test.predictors <- testxgb[, -c(2)]
+test_data<- as.matrix(test.predictors)
+mode(test_data) <- 'double'
+```
+
+
+
+```{r}
+cv.nround = 200;  # Number of rounds. This can be set to a lower or higher value, if you wish, example: 150 or 250 or 300  
+bst.cv = xgb.cv(param=param,
+  data = dataxgb,
+  label = label,
+  nfold = 3,
+  nrounds=cv.nround,
+  prediction=T)
+
+```
+
+find the min mlogloss that occured and on which itteration 
+```{r}
+names(bst.cv$evaluation_log)
+#Find where the minimum logloss occurred
+min.loss.idx = which.min(bst.cv$evaluation_log[, test_mlogloss_mean]) 
+cat ("Minimum logloss occurred in round : ", min.loss.idx, "\n")
+# Minimum logloss
+print(bst.cv$evaluation_log[min.loss.idx,])
+```
+#Step 2: Train the xgboost model using min.loss.idx found above.
+#         Note, we have to stop at the round where we get the minumum error.
+
+```{r}
+set.seed(100)
+
+bst = xgboost(
+  param=param,
+  data =dataxgb,
+  label = label,
+  nrounds=min.loss.idx)
+```
+ Make prediction on the testing data.
+```{r}
+testxgb$prediction = predict(bst, test_data) #added a new column with the respective predictors 
+testxgb$prediction
+
+```
+#confusion matrix testing data 
+
+```{r}
+#convert the prediction as factor, as the confusion matrix requires the data to be a factor and theshould have th same levels 
+testxgb$prediction<-as.factor(testxgb$prediction)
+```
+
+#convert the referenc variable into numeric and then reduce the variables to start from 0 as xgboost requires the letters to start from 0
+```{r}
+testxgb$Accident_Severity<-as.numeric(testxgb$Accident_Severity)-1
+testxgb$Accident_Severity<-as.factor(testxgb$Accident_Severity)
+
+```
+
+#Compute the accuracy of predictions.
+```{r}
+confusionMatrix( testxgb$prediction,testxgb$Accident_Severity)
+```
+
+#confusion matrix trainxgb data 
+
+#comupute accuracy for the training data 
+```{r}
+trainxgb$prediction=predict(bst, dataxgb)
+trainxgb$prediction
+```
+
+```{r}
+#convert the prediction as factor, as the confusion matrix requires the data to be a factor and theshould have th same levels 
+trainxgb$prediction<-as.factor(trainxgb$prediction)
+
+#convert the referenc variable into numeric and then reduce the variables to start from 0 as xgboost requires the letters to start from 
+trainxgb$Accident_Severity<-as.numeric(trainxgb$Accident_Severity)-1
+trainxgb$Accident_Severity<-as.factor(trainxgb$Accident_Severity)
+```
+
+
+#confusion matrix training matrix - 0.9724
+```{r}
+confusionMatrix( trainxgb$prediction,trainxgb$Accident_Severity)
+
+```
+#variable imoortance #gain is the improvement in accuracy brought by a feature to the branches it is on
+```{r}
+xgb.importance(model=bst)
+```
+```{r}
+importance<- xgb.importance(feature_names =colnames(dataxgb), model = bst)
+xgb.plot.importance(importance_matrix = importance)
+```
+
+```{r}
+importance<- xgb.importance(feature_names =colnames(dataxgb), model = bst)
+xgb.plot.importance(importance_matrix = importance, top_n = 20)
+```
+##Casualty _severity is highly correlated to accident severity as seen above on the corrplot: suggestion to remove it as it is skewing the importance and alsom maybe the accuracy  and then observe the results of the model . performed and the importance change  and the accuracy went down from 0.96 to 0.900
+
+
+```{r}
+c2 <- chisq.test(trainxgb$Casualty_Severity, label)
+print(c2)
+```
+
+############################################################
+#
+#                  Random Forest 
+#
+#
+##############################################################
+
+ Due to memory issues with Random forest, we will parallize among 4 cores to speed up the process
+```{r}
+rftrain<-train
+rftest<-test
+
+set.seed(100)
+registerDoSNOW(makeCluster(3, type="SOCK"))
+rftrain$Age_of_Vehicle<- as.integer(rftrain$Age_of_Vehicle)
+x<- subset(rftrain, select = - Accident_Severity)
+y<- rftrain$Accident_Severity
+
+
+```
+
+RF model 
+
+```{r}
+rf <- foreach(ntree = rep(250, 3), .combine = combine, .packages = "randomForest") %dopar%
+  randomForest(x=x, y=y, ntree = ntree)
+```
+
+
+
+```{r}
+varImpPlot(rf)
+```
+
+#Confusion matrix
+
+an accuracy rate of 1, is quite high 
+```{r}
+prf_train <- predict(rf, train)
+confusionMatrix(prf_train, train$Accident_Severity)
+
+```
+confusion matrxi test data 
+
+```{r}
+rftest$Age_of_Vehicle<- as.integer(rftest$Age_of_Vehicle)
+prf_test<- predict(rf, rftest)
+
+confusionMatrix(prf_test, rftest$Accident_Severity)
+
+```
+####### repeat random forest, without casualty severity due to high correlation with accident severity , accident severity 
+
+```{r}
+rftrain <- train
+rfttest <- test 
+
+rftrain <- subset(rftrain, select = -Casualty_Severity)
+rftrain <- subset(rftrain, select = -Accident_Index)
+rfttest <- subset(rfttest, select = -Casualty_Severity)
+rfttest <- subset(rfttest, select = -Accident_Index)
+
+
+```
+
+
+
+```{r}
+set.seed(100)
+registerDoSNOW(makeCluster(4, type="SOCK"))
+rftrain$Age_of_Vehicle<- as.integer(rftrain$Age_of_Vehicle)
+x1<- subset(rftrain, select = - Accident_Severity)
+y2<- rftrain$Accident_Severity
+
+```
+
+modelrf2 
+```{r}
+
+rf1 <- foreach(ntree = rep(250, 4), .combine = combine, .packages = "randomForest") %dopar%
+  randomForest(x=x1, y=y2, ntree = ntree)
+
+```
+```{r}
+varImpPlot(rf1, top_n=10)
+```
+```{r}
+rfttest$Age_of_Vehicle<- as.integer(rfttest$Age_of_Vehicle)
+prf_test1<- predict(rf1, rfttest)
+
+confusionMatrix(prf_test1, rfttest$Accident_Severity)
+```
+
+
+
+
+################################################################################
+#
+#
+#  Naive Bayes 
+#
+#
+##################################################################################
+
+
+ we will give the naive bayes a try 
+```{r}
+ntrain <- trainxgb 
+ntest<- testxgb
+```
+ 
+ 
+```{r}
+library(naivebayes)
+nbmodel<-naive_bayes(Accident_Severity~., data=ntrain)
+nbmodel
+
+```
+ 
+ 
+ Results : prediction from the model inform of  probability and then add the result as colun 
+```{r}
+pnb<- predict(nbmodel, ntrain, type='prob')
+head(cbind(pnb, ntrain))
+
+
+```
+
+Confusion matrix Naive bayes 
+
+
+```{r}
+#CONFUSION MATRIX
+p1<-predict(nbmodel, ntrain)
+tab1<- table(p1, ntrain$Accident_Severity)
+tab1
+```
+
+ misclassification 
+ 
+```{r}
+#misclassifocation 
+1-sum(diag(tab1))/sum(tab1) 
+
+```
+ 
+Test data, 
+
+```{r}
+
+p2<- predict(nbmodel,ntest)
+tab2<- table(p2, ntest$Accident_Severity)
+tab2
+
+
+```
+
+ misclassication of the test data 
+```{r}
+1-sum(diag(tab2))/sum(tab2) 
+
+```
+ 
+##################################################################################
+#
+#
+#                      MULTINOMIAL REGRESSION 
+#
+#######################################################################################
+mutlinomial regression and  use them to rate the accuracy of the above models,
+
+```{r}
+#multinomial 
+Mnmodel<- multinom(Accident_Severity~., data=trainxgb, MaxNWts=1225)
+```
+```{r}
+Mnmodel
+```
+```{r}
+p<-predict(Mnmodel, trainxgb, type ="prob")
+```
+```{r}
+cmmultinomial <- table(predict(Mnmodel), train$Accident_Severity)
+print(cmmultinomial)
+```
+```{r}
+1- sum(diag(cmmultinomial))/sum(cmmultinomial)
+```
+```{r}
+summary(Mnmodel)
+
+```
+
+
+```{r}
+mmlog <- caret::train(
+  Accident_Severity~.,
+  data=c,
+  method="multinom",
+  trcontrol =trainControl(method = "cv", number=3)
+)
+```
+
+
+
+
+```{r}
+
+
+```
+
