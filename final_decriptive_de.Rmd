@@ -1,0 +1,516 @@
+---
+title: "Descriptive R nOtebook"
+output: html_notebook
+---
+
+libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+
+```
+load data
+```{r}
+data<- read.csv( "C:/Forscher/3891-2019/Arbeitsverzeichnis/total14_17.csv")
+data<- data[, -c(1)]
+
+
+```
+
+missing varaibles -out 
+```{r}
+p<- function(x){sum(is.na(x))/length(x)*100}
+apply(data, 2, p)
+```
+
+```{r}
+#print number of missing values per element 
+
+missing_ct<-colSums(apply(X =data, MARGIN = 2, is.na)) 
+missing_ct[which(missing_ct > 0)]
+print(paste("There are ", length(missing_ct[which(missing_ct > 0)]), 
+            " variables have NAs.")) 
+print(paste("Total number of NAs:", sum(missing_ct)))
+```
+
+Delete variables with more than 75 unknowns in each columns
+
+```{r}
+data<-data[,-c(23,27)]
+```
+
+```{r}
+# as factors
+colzz <- c(2:5,10:24,26,28,33)
+
+data[, colzz]<-lapply(data[,colzz], factor)
+data$na_count<- apply(is.na(data), 1, sum)
+data$percent_na<-apply(data, 1, function(x){sum(is.na(x))/length(x)*100})
+
+```
+
+distribution of nas by rows 
+```{r}
+na_distribution <- ggplot(data, aes(na_count)) + geom_histogram(position = "dodge") 
+na_distribution
+```
+
+delete rows with more than 75% nas, that is minimum 12 nas excluding the goe varaibles which were not used inmodelling 
+```{r}
+#total<-data%>%
+ # filter(na_count <= 13) #75% of 50, 583508 obsve of 50 variables
+total <-data #1849469 with 50 vars 
+```
+
+acdidents involving only personal injury 
+
+```{r}
+total <-total %>%
+  filter(UKATEGORIE %in% 1:3) #1849469 obs and 56 vars 
+```
+
+
+
+
+Descriptive analysis by unovariate 
+```{r}
+by_ruralUrban <- total%>% select(UID,UORTSLAGE)%>% group_by(UORTSLAGE) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+
+
+by_ruralUrban
+# chart1
+chartruralurban <- ggplot(data=by_ruralUrban, aes(x=UORTSLAGE, y=total.count, fill=UORTSLAGE))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Urban_or_Rural_Area")
+chartruralurban
+```
+
+
+Number of accident per year 
+
+```{r}
+#by-year 
+by_year_count <- total%>% select(UID,UJAHR)%>% group_by(UJAHR) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+
+by_year_count 
+# chart 1
+chartyear <- ggplot(data=by_year_count, aes(x=UJAHR, y=total.count, fill=year))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Year")+geom_text(aes(label=paste0(round(total.count, 2),"%")),position=position_dodge(width=0.9), vjust=-0.25)
+
+chartyear
+```
+
+accident severity per year 
+```{r}
+by_yearsev <- data %>% select(UID,UJAHR,UKATEGORIE) %>% group_by(UJAHR,UKATEGORIE) %>% summarise(total.count=n())%>% mutate(total.count = total.count/sum(total.count)*100)
+by_yearsev
+
+chart_yearsev <- ggplot(data=by_yearsev, aes(x=UJAHR, y=total.count, fill=UKATEGORIE)) + geom_bar(stat="identity")+geom_text(aes(label=paste0(round(total.count, 2),"%")),position=position_stack(vjust=0.25))+labs(y="Percentage", x= "Year")+ scale_fill_discrete(name= "Accident Severity", labels=c("Slight", "Serious", "Fatal"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+
+chart_yearsev
+
+```
+
+Accident severity
+```{r}
+#Accident severity 
+
+by_Accidentseverity <- total%>% select(UID,UKATEGORIE)%>% group_by(UKATEGORIE) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_Accidentseverity
+
+#chart3
+chartaccidentseverity<- ggplot(data=by_Accidentseverity, aes(x=UKATEGORIE, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Acccident_Severity")geom_text(aes(label=paste0(round(total.count, 2),"%")),position=position_dodge(width=0.9), vjust=-0.25)
+chartaccidentseverity
+```
+
+
+
+Collision type 
+```{r}
+by_collisiontype <- total%>% select(UID,UART)%>% group_by(UART) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_collisiontype
+
+#chart3
+chartcollision<- ggplot(data=by_collisiontype, aes(x=UART, y=total.count, fill=UART))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Collision Type")+geom_text(aes(label=paste0(round(total.count, 2),"%")),position=position_dodge(width=0.9), vjust=-0.25)
+chartcollision
+```
+
+accident type 
+```{r}
+by_accidenttype<- total%>% select(UID,UTYP1)%>% group_by(UTYP1) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_accidenttype
+
+#chart3
+chartaccidenttype<- ggplot(data=by_accidenttype, aes(x=UTYP1, y=total.count, fill=UTYP1))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Accident Type")
+chartaccidenttype
+```
+
+ 
+recoding vaiables  
+
+Road type  HIGHWAY 1- highway and 0 other roads 
+```{r}
+total <- total %>% 
+  mutate(Highway= case_when(USTRKLASSE %in% 1:2 ~ 1,
+                                      USTRKLASSE %in% 3:5 ~ 0))
+```
+
+```{r}
+by_urbanhighway<- total%>% select(UID,UORTSLAGE,Highway)%>% group_by(UORTSLAGE,Highway) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_urbanhighway
+
+#chart3
+charturbanhighway<- ggplot(data=by_urbanhighway, aes(x=Highway, y=total.count, fill=UORTSLAGE))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Road type")+geom_text(aes(label=paste0(round(t_count, 2))), position = position_stack(vjust=0.9))+ scale_fill_discrete(name= "Area", labels=c("Urban", "Rural"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())+ scale_fill_manual(values =c("#00BFFF", "#1E90FF"))
+charturbanhighway
+
+```
+  regroup in one variable callled AREA (1- highway, 3- rural, 2- urban)
+  
+```{r}
+total <- total %>% 
+  mutate(Area= case_when(Highway==1 & UORTSLAGE ==1 ~1,
+                         Highway==1 & UORTSLAGE ==2 ~3,
+                         Highway==0 & UORTSLAGE ==1 ~2,
+                         Highway==0 & UORTSLAGE ==2 ~3
+                         ))
+```
+```{r}
+by_area<- total%>% select(UID,Area)%>% group_by(Area) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_area
+
+#chart3
+chartarea<- ggplot(data=by_area, aes(x=Area, y=total.count, fill=Area))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Area")
+chartarea
+```
+  
+  
+area plus seve 
+
+```{r}
+areasev<- data %>% select(UID,UKATEGORIE, Area)%>% group_by(UKATEGORIE,Area) %>% summarise(t_count = n())%>% mutate(t_count = t_count/sum(t_count)*100)
+areasev
+chart_areasev<- ggplot(data=areasev, aes(x=UKATEGORIE, y=t_count, fill= Area))+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")), position = position_stack(vjust=0.9))+labs(y="Percentage", x= "Accident severity")+ scale_fill_discrete(name= "Area", labels=c("Higheway", "Urban", "Rural"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())#+scale_fill_brewer(palette = "Set2") #scale_fill_manual(values =c("#00BFFF", "#1E90FF", "#4169E1"))
+chart_areasev
+```
+
+
+```{r}
+total <- total %>% 
+  mutate(Contributory_factor= case_when(BURSACHE1 %in% 1:11 ~1,
+                         BURSACHE1 %in% 12:13 ~2,
+                         BURSACHE1 %in% 14:15 ~3,
+                         BURSACHE1 %in% 16:23 ~4,
+                         BURSACHE1 %in% 24:33 ~1,
+                         BURSACHE1 %in% 35:37 ~5,
+                         BURSACHE1 %in% 38:42 ~1,
+                         BURSACHE1 %in% 43:49 ~6,
+                         BURSACHE1 %in% 50:55~7,
+                         BURSACHE1 %in% 60:69 ~8
+                         
+                         
+                         ))
+```
+
+```{r}
+by_con_factors<- total%>% select(UID,Contributory_factor)%>% group_by(Contributory_factor) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_con_factors
+
+#chart3
+chartcon_factors<- ggplot(data=by_con_factors, aes(x=Contributory_factor, y=total.count, fill=Contributory_factor))+geom_bar(stat = "identity")+labs(y="Number of Accidents", x= "Contributory factors")
+chartcon_factors
+```
+
+ 
+ 
+contibutorfactor  by sev 
+
+```{r}
+by_con_factorsEV<- total%>% select(UID,Contributory_factor, UKATAGEORIE )%>% group_by(Contributory_factor, UKATEGORIE) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_con_factorsEV
+
+```
+
+ 
+ speed limit
+ 
+```{r}
+#total<-total%>%
+ # filter(UGESCHWBEGR %in% 005:130)
+
+
+total <- total %>% 
+  mutate(Speed_limit= case_when(UGESCHWBEGR %in% 005:030 ~"0-30",
+                                UGESCHWBEGR %in% 040:060 ~"30-60",
+                                UGESCHWBEGR %in% 070:100 ~"60-100",
+                                UGESCHWBEGR %in% 110:130 ~"100-130",
+                                UGESCHWBEGR %in% "Z07:z30" ~"a"
+                         
+                         
+                         
+                         ))
+```
+ 
+```{r}
+
+
+by_spd<- total%>% select(UID,Speed_limit)%>% group_by(Speed_limit) %>% summarise(total.count=n()) %>% arrange(total.count)%>% drop_na(Speed_limit)
+by_spd
+
+
+```
+ 
+```{r}
+by_spd1<- total%>% select(UID,Speed_limit, UKATAGEORIE )%>% group_by(Speed_limit, UKATAGEORIE ) %>% summarise(total.count=n()) %>% arrange(total.count)%>% drop_na(Speed_limit)
+by_spd1
+```
+ 
+ 
+
+Light conditions 8 1 - daylight, 0 - dark 
+
+```{r}
+total <- total %>%
+  mutate(Light_cond=case_when(ULICHTVERH==0 ~ 1,
+                              ULICHTVERH %in%1:2~0))
+```
+
+
+```{r}
+bylight_cond<- total%>% select(UID,Light_cond)%>% group_by(Light_cond) %>% summarise(total.count=n()) %>% arrange(total.count)
+bylight_cond
+
+```
+
+```{r}
+bylight_cond1<- total%>% select(UID,Light_cond,UKATAGEORIE)%>% group_by(Light_cond,UKATAGEORIE) %>% summarise(total.count=n()) %>% arrange(total.count)
+bylight_cond1
+```
+
+Road surafce condition 
+```{r}
+total <- total %>%
+  mutate(Road_cond=case_when(USTRZUST1==0 ~ 1,
+                              USTRZUST1 %in% 2:5~0))
+```
+
+number of particpants who were in an accident 
+1 - dry 0- wet
+```{r}
+total <- total %>%
+  mutate(N_of_participants=case_when(UANZBET==1~ 1,
+                                     UANZBET==2~ 2,
+                                     UANZBET==3~ 3,
+                                     UANZBET %in% 4:30 ~ 4))
+```
+
+
+table road cond
+```{r}
+by_roadcond<- total%>% select(UID,Road_cond)%>% group_by(Road_cond) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_roadcond
+
+
+```
+
+road sev 
+```{r}
+by_roadcond1<- total%>% select(UID,Road_cond,UKATAGEORIE)%>% group_by(Road_cond, UKATAGEORIE) %>% summarise(total.count=n()) %>% arrange(total.count)
+by_roadcond1
+
+```
+
+
+
+interaction terms where, who, when .... severity and the area 
+```{r}
+by_sevyear<- total%>% select(UID,UKATEGORIE, UJAHR)%>% group_by(UKATEGORIE, UJAHR) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevyear
+chartsevyear<- ggplot(data = by_sevyear, aes(x=UJAHR, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Year")
+chartsevyear
+```
+
+
+```{r}
+by_sevarea<- total%>% select(UID,UKATEGORIE, Area)%>% group_by(UKATEGORIE, Area) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevarea
+chartsevarea<- ggplot(data=by_sevarea, aes(x=Area, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Area")
+chartsevarea
+```
+type of accidnet and collision 
+
+```{r}
+by_sevcol<- total%>% select(UID,UKATEGORIE, UART)%>% group_by(UKATEGORIE, UART) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevcol
+chartsevcol<- ggplot(data=by_sevcol, aes(x=UART, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Collision Type")
+chartsevcol
+```
+
+
+############Accidnet type analysis #############
+
+accident type by severity 
+```{r}
+by_sevtype<- total%>% select(UID,UKATEGORIE, UTYP1)%>% group_by(UTYP1, UKATEGORIE) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevtype
+chartsevtyp<- ggplot(data=by_sevtype, aes(x=UTYP1, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) + scale_fill_discrete(name= "Accident severity", labels=c("Slight","Serious", "Fatal"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartsevtyp
+
+```
+
+accident type by speed 
+```{r}
+by_typespeed<- total%>% select(UID,Speed_limit, UTYP1)%>% group_by(UTYP1,Speed_limit) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typespeed
+chartspeedtype<- ggplot(data=by_typespeed, aes(x=UTYP1, y=total.count, fill=Speed_limit))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) +
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartspeedtype
+
+```
+
+accident type by area
+```{r}
+by_typearea<- total%>% select(UID,Area, UTYP1)%>% group_by(UTYP1,Area) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typearea
+chartareatype<- ggplot(data=by_typearea, aes(x=UTYP1, y=total.count, fill=Area))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) + scale_fill_discrete(name="Area", labels=c("Highway","Urban", "Rural"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartareatype
+
+
+```
+
+pivot all
+```{r}
+by_typeall<- total%>% select(UID,Area,Speed_limit, UKATEGORIE, UTYP1)%>% group_by(UTYP1,Speed_limit, UKATEGORIE,Area) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typeall
+
+```
+
+
+
+
+
+subs set and filter 
+```{r}
+total1<- total
+total1<- total1 %>%
+  filter(BERSTZULKBA %in% 2010:2017 & UKATEGORIE%in% 1:2)
+
+
+```
+
+accident type by severity 
+```{r}
+by_sevtype1<- total%>% select(UID,UKATEGORIE, UTYP1)%>% group_by(UTYP1, UKATEGORIE) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevtype1
+chartsevtyp1<- ggplot(data=by_sevtype1, aes(x=UTYP1, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) + scale_fill_discrete(name= "Accident severity", labels=c("Slight","Serious", "Fatal"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartsevtyp1
+
+```
+
+accident type by speed 
+```{r}
+by_typespeed1<- total1%>% select(UID,Speed_limit, UTYP1)%>% group_by(UTYP1,Speed_limit) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typespeed1
+chartspeedtype1<- ggplot(data=by_typespeed1, aes(x=UTYP1, y=total.count, fill=Speed_limit))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) +
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartspeedtype1
+
+```
+
+accident type by area
+```{r}
+by_typearea1<- total1%>% select(UID,Area, UTYP1)%>% group_by(UTYP1,Area) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typearea1
+chartareatype1<- ggplot(data=by_typearea1, aes(x=UTYP1, y=total.count, fill=Area))+geom_bar(stat = "identity")+labs(y="Percent %", x= "Accident Type")+geom_bar(stat = "identity")+geom_text(aes(label=paste0(round(t_count, 2), "%")),position=position_stack(vjust=0.5)) + scale_fill_discrete(name="Area", labels=c("Highway","Urban", "Rural"))+
+  theme(legend.position="bottom", legend.direction="horizontal",
+        legend.title = element_blank())
+chartareatype1
+
+```
+
+
+
+
+pivot all
+```{r}
+by_typeall2<- total1%>% select(UID,Area,Speed_limit, UKATEGORIE, UTYP1)%>% group_by(UTYP1,Area,Speed_limit,UKATEGORIE) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_typeall2
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+cm<- cor(zip, method="pearson", use="everything")
+corrplot(cm,tl.pos = "td", tl.cex = 0.5,type = "upper",diag = FALSE, order = "FPC")
+```
+
+
+```{r}
+by_sevnum<- total%>% select(UID,N_of_participants, UKATEGORIE)%>% group_by(UKATEGORIE,N_of_participants ) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_sevnum
+chartsevnum<- ggplot(data=by_sevnum, aes(x=N_of_participants, y=total.count, fill=UKATEGORIE))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Number of particpants ")
+chartsevnum
+
+```
+```{r}
+by_coltype<- total%>% select(UID,UART,UTYP1)%>% group_by(UART, UTYP1) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_coltype
+chartcoltype<- ggplot(data=by_coltype, aes(x=UART, y=total.count, fill=UTYP1))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Collision vs accident type ")
+chartcoltype
+```
+
+```{r}
+by_colpart<- total%>% select(UID,UART,N_of_participants)%>% group_by(UART, N_of_participants) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_colpart
+chartcolpart<- ggplot(data=by_colpart, aes(x=UART, y=total.count, fill=N_of_participants))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Collision vs Number of Accidnets ")
+chartcolpart
+```
+
+```{r}
+by_colarea<- total%>% select(UID,UART,Area)%>% group_by(UART, Area) %>% summarise(total.count=n()) %>% arrange(total.count)%>% mutate(total.count = total.count/sum(total.count)*100)
+by_colarea
+chartcolarea<- ggplot(data=by_colarea, aes(x=UART, y=total.count, fill=Area))+geom_bar(stat = "identity")+labs(y="Percentage of accidents", x= "Collision vs Area ")
+chartcolarea
+```
+Write the file to reuse later 
+
+```{r}
+write.csv(total, "C:/Forscher/3891-2019/Arbeitsverzeichnis/descr_final.csv", sep = "," )
+```
+
+
+###########---------------------Next Filter 
+
+Rename the manufacture date of vehicle 
+
+```{r}
+
+```
+
+filter vehicles made from 2010 onwards 
